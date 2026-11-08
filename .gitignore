@@ -1,0 +1,12 @@
+
+
+build/
+dist/
+.config.mk
+.flash.conf.json
+data
+*.o
+*.a
+*.so
+.vscode/
+marker_video.avi
