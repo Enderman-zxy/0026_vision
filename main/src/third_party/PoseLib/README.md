@@ -1,0 +1,1 @@
+This directory contains a trimmed subset of PoseLib (https://github.com/PoseLib/PoseLib). The original LICENSE is included in this folder.
