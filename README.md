@@ -12,3 +12,7 @@
 - `MarkerDetector`: 检测 L 型亮斑
 - `PoseEstimator`: 基于 PoseLib 的 P3P 解算
 - `ExitTagRecognizer`: 纯 OpenCV 四边形识别（替代底层报错的 find_apriltags）
+
+## 致谢 (Acknowledgments)
+本项目的视觉系统基于以下开源项目构建：
+- **[MaixCDK](https://github.com/sipeed/MaixCDK)** (Apache 2.0 License)：提供了在 MaixCAM 硬件上调用摄像头、显示和硬件加速的核心 API。
