@@ -21,7 +21,7 @@
 using namespace maix;
 
 const int CAM_W = 640;
-const int CAM_H = 320;
+const int CAM_H = 480;
 const int ALGO_W = 320;
 const int ALGO_H = 240;
 
@@ -53,7 +53,7 @@ enum VisionMode {
 };
 VisionMode current_state = STATE_IDLE;
 
-maix::peripheral::uart::UART uart("/dev/ttyS0", 11520);
+maix::peripheral::uart::UART uart("/dev/ttyS0", 115200);
 
 void send_single_byte(uint8_t cmd) {
   uart.write(&cmd, 1);
@@ -86,12 +86,12 @@ bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
   }
   float center_u = sum_u / 4.0f;
   float center_v = sum_v / 4.0f;
-  out_x = (int16_t)(center_u - (ALGO_W / 2.0f));
-  out_y = (int16_t)(center_v - (ALGO_H / 2.0f));
+  out_x = (int16_t)((center_u - (ALGO_W / 2.0f)) * 2.0f);
+  out_y = (int16_t)((center_v - (ALGO_H / 2.0f)) * 2.0f);
 
   if (l_marker_pose.solve(pts, L_MARKER_3D_POINTS)) {
     cv::Vec3d tvec = l_marker_pose.getTvec();
-    int16_t distance_mm = (int16_t)(cv::norm(tvec) * 1000.0f);
+    out_d = (int16_t)(cv::norm(tvec) * 1000.0f);
 
     // 画个坐标轴和中心点方便调试
     l_marker_pose.drawAxis(frame_small, 0.04f);
@@ -148,7 +148,7 @@ int _main(int argc, char* argv[]) {
     if (uart.read(&cmd, 1) > 0) {
       if (cmd == 0xFF) {
         send_single_byte(0xFE);
-        current_state = STATE_IDLE;
+        current_state = STATE_TRACK_BOX;
         log::info("Received 0xFF: start tracking box.");
       } else if (cmd == 0xFD) {
         send_single_byte(0xFE);
