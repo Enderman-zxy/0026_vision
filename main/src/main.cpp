@@ -55,6 +55,14 @@ VisionMode current_state = STATE_IDLE;
 
 maix::peripheral::uart::UART uart("/dev/ttyS0", 115200);
 
+const int MIN_DETECTED_FRAMES = 3;
+const int MAX_LOST_FRAMES = 5;
+
+int box_detected_frames = 0;
+int box_lost_frames = 0;
+int16_t last_valid_x = 0, last_valid_y = 0, last_valid_d = 0;
+bool box_is_stable = false;
+
 void send_single_byte(uint8_t cmd) {
   uart.write(&cmd, 1);
   log::info("[UART TX] Sent: 0x%02X", cmd);
@@ -149,6 +157,9 @@ int _main(int argc, char* argv[]) {
       if (cmd == 0xFF) {
         send_single_byte(0xFE);
         current_state = STATE_TRACK_BOX;
+        box_detected_frames = 0;
+        box_lost_frames = 0;
+        box_is_stable = false;
         log::info("Received 0xFF: start tracking box.");
       } else if (cmd == 0xFD) {
         send_single_byte(0xFE);
@@ -171,26 +182,43 @@ int _main(int argc, char* argv[]) {
 
     int16_t send_x = 0, send_y = 0, send_d = 0;
 
-    bool detected = false;
+    // bool detected = false;
 
     if (current_state == STATE_TRACK_BOX) {
       cv::Mat frame_small;
       cv::resize(frame_hd, frame_small, cv::Size(ALGO_W, ALGO_H));
-      detected = process_l_marker(frame_small, send_x, send_y, send_d);
+      bool detected = process_l_marker(frame_small, send_x, send_y, send_d);
+      if (detected) {
+        box_detected_frames++;
+        box_lost_frames = 0;
+
+        last_valid_x = send_x;
+        last_valid_y = send_y;
+        last_valid_d = send_d;
+
+        if (box_detected_frames >= MIN_DETECTED_FRAMES) {
+          box_is_stable = true;
+        }
+      } else {
+        box_detected_frames = 0;
+        box_lost_frames++;
+
+        if (box_lost_frames > MAX_LOST_FRAMES) {
+          box_is_stable = false;
+        }
+      }
+      if (box_is_stable) {
+        send_data_packet(last_valid_x, last_valid_y, last_valid_d);
+      }
+
     } else if (current_state == STATE_TRACK_EXIT) {
-      detected = process_exit_tag(frame_hd, send_x, send_y, send_d);
-    }
-
-    if (detected) {
-      log::info("[State %d] X:%d Y:%d D:%d", current_state, send_x, send_y,
-                send_d);
-
-      send_data_packet(send_x, send_y, send_d);
-      
-      if (current_state == STATE_TRACK_EXIT) {
+      bool detected = process_exit_tag(frame_hd, send_x, send_y, send_d);
+      if (detected) {
+        log::info("[Exit-Tag] X:%d Y:%d W:%d", send_x, send_y, send_d);
+        send_data_packet(send_x, send_y, send_d);
         send_single_byte(0xFC);
         current_state = STATE_IDLE;
-        log::info("Exit Tag found. Send 0xFC, entering IDLE");
+        log::info("Exit Tag found. Sent 0xFC, entering IDLE.");
       }
     }
     delete img;
