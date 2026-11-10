@@ -35,12 +35,12 @@ const std::vector<cv::Point3f> L_MARKER_3D_POINTS = {
     {HALF_SIZE, HALF_SIZE, 0},
     {-HALF_SIZE, HALF_SIZE, 0}};
 
-// 1. 准备临时相机内参（由于未标定，使用按 320x240 估算的假内参）
-cv::Mat camera_matrix =
-    (cv::Mat_<double>(3, 3) << 457.0, 0., 160.0, 0., 457.0, 120.0, 0., 0., 1.);
 
-// 畸变系数继续保持为 0 即可（未标定时，忽略畸变更安全）
-cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) << 0, 0, 0, 0, 0);
+// 相机参数
+cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << 249.7885517, 0., 162.208795,
+                         0., 249.9703717, 115.9213142, 0., 0., 1.);
+cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) << -0.00517909478, -0.00654534888,
+                       0.00124095615, -0.0000318773159, 0.0925784765);
 
 MarkerDetector l_marker_detector;
 PoseEstimator l_marker_pose(camera_matrix, dist_coeffs);
@@ -127,8 +127,6 @@ bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
     // 打印调试
     // log::info("[L-Marker] X:%d Y:%d D:%d mm", err_x, err_y, distance_mm);
     return true;
-    // TODO: 电控串口发送
-    // send_to_mcu(err_x, err_y, distance_mm);
   }
   return false;
 }
@@ -158,8 +156,6 @@ bool process_exit_tag(cv::Mat& frame_hd, int16_t& out_x, int16_t& out_y,
   out_y = result.err_y;
   out_d = result.width_px;
   return true;
-  // TODO: 电控串口发送
-  // send_to_mcu(result.err_x, result.err_y, result.width_px);
 }
 
 int _main(int argc, char* argv[]) {
