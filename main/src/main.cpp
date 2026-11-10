@@ -1,3 +1,4 @@
+#define MOCK_UART 1
 
 #include "main.h"
 
@@ -53,11 +54,24 @@ enum VisionMode {
 };
 VisionMode current_state = STATE_IDLE;
 
+#if MOCK_UART
+int uart_read_mock() { return 0; }
+void uart_write_mock(uint8_t* buf, int len) {
+  char hex_str[128] = {0};
+  for (int i = 0; i < len; i++) sprintf(hex_str + i * 3, "%02X ", buf[i]);
+  log::info("[MOCK TX] %s", hex_str);
+}
+#else
 maix::peripheral::uart::UART uart("/dev/ttyS0", 115200);
+#endif
 
 void send_single_byte(uint8_t cmd) {
+#if MOCK_UART
+  uart_write_mock(&cmd, 1);
+#else
   uart.write(&cmd, 1);
   log::info("[UART TX] Sent: 0x%02X", cmd);
+#endif
 }
 
 void send_data_packet(int16_t x, int16_t y, int16_t d) {
@@ -65,7 +79,19 @@ void send_data_packet(int16_t x, int16_t y, int16_t d) {
   memcpy(&buf[0], &x, 2);
   memcpy(&buf[2], &y, 2);
   memcpy(&buf[4], &d, 2);
+#if MOCK_UART
+  uart_write_mock(buf, 6);
+#else
   uart.write(buf, 6);
+#endif
+}
+
+int read_uart(uint8_t* cmd) {
+#if MOCK_UART
+  return 0;  // 假串口无输入
+#else
+  return uart.read(cmd, 1);
+#endif
 }
 
 bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
@@ -142,10 +168,25 @@ int _main(int argc, char* argv[]) {
   // 分辨率必须开到 640x480
   camera::Camera cam(CAM_W, CAM_H);
 
-  while (true) {
-    uint8_t cmd = 0;
+  int frame_count = 0;
 
-    if (uart.read(&cmd, 1) > 0) {
+  while (!app::need_exit()) {
+    uint8_t cmd = 0;
+    int read_ret = read_uart(&cmd);
+
+#if MOCK_UART
+    // 假串口模式下，我们用帧数模拟电控发指令
+    if (frame_count == 30) {
+      cmd = 0xFF;
+      read_ret = 1;
+    }  // 第30帧模拟发 0xFF
+    else if (frame_count == 200) {
+      cmd = 0xFD;
+      read_ret = 1;
+    }  // 第200帧模拟发 0xFD
+
+#endif
+    if (read_ret > 0) {
       if (cmd == 0xFF) {
         send_single_byte(0xFE);
         current_state = STATE_TRACK_BOX;
@@ -159,11 +200,11 @@ int _main(int argc, char* argv[]) {
 
     if (current_state == STATE_IDLE) {
       usleep(10000);
+      frame_count++;
       continue;
     }
 
     image::Image* img = cam.read();
-
     if (!img) continue;
 
     cv::Mat frame_hd;
@@ -186,7 +227,7 @@ int _main(int argc, char* argv[]) {
                 send_d);
 
       send_data_packet(send_x, send_y, send_d);
-      
+
       if (current_state == STATE_TRACK_EXIT) {
         send_single_byte(0xFC);
         current_state = STATE_IDLE;
@@ -194,6 +235,7 @@ int _main(int argc, char* argv[]) {
       }
     }
     delete img;
+    frame_count++;
     usleep(30000);
   }
   return 0;

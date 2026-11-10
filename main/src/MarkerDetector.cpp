@@ -32,12 +32,12 @@ cv::Mat MarkerDetector::preprocess(const cv::Mat& frame) {
 
   // 3. 形态学操作：闭运算将四个分离的L型连接成一个整体，再开运算去除噪点
   // 补充：这里连接效果不好，所以改为只进行开运算，去除噪点
-  // cv::Mat morphed;
-  // cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(12,
-  // 12)); cv::morphologyEx(gray, gray, cv::MORPH_CLOSE, kernel);
-  // cv::morphologyEx(gray, morphed, cv::MORPH_OPEN, kernel);
+  cv::Mat morphed;
+  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+  // cv::morphologyEx(gray, gray, cv::MORPH_CLOSE, kernel);
+  cv::morphologyEx(gray, morphed, cv::MORPH_OPEN, kernel);
 
-  return gray;
+  return morphed;
 }
 
 // 检测Marker
@@ -115,7 +115,7 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
 
   for (const auto& contour : contours) {
     double area = cv::contourArea(contour);
-    maix::log::info("Contour area: %f", area);
+    // maix::log::info("Contour area: %f", area);
     if (area < min_l_area) {
       continue;  // 面积太小，忽略
     }
@@ -156,9 +156,9 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
       }
 
       float aspect_ratio = rotated_rect.size.width / rotated_rect.size.height;
-      // if (aspect_ratio < 0.85f || aspect_ratio > 1.15f) {
-      //   continue;  // 长宽比不符合要求，忽略
-      // }
+      if (aspect_ratio < 0.85f || aspect_ratio > 1.15f) {
+        continue;  // 长宽比不符合要求，忽略
+      }
       maix::log::info("Aspect ratio: %f", aspect_ratio);
 
       // std::vector<cv::Point> hull;

@@ -90,6 +90,12 @@ bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
     cv::approxPolyDP(contour, poly, cv::arcLength(contour, true) * 0.05, true);
 
     if (poly.size() == 4) {
+      cv::Rect rect = cv::boundingRect(poly);
+      float aspect_ratio = (float)rect.width / rect.height;
+      // 长宽比过滤
+      if (aspect_ratio < 0.8f || aspect_ratio > 1.25f) {
+        continue;
+      }
       if (area > max_area) {
         max_area = area;
         best_square = poly;
@@ -98,6 +104,30 @@ bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
   }
 
   if (!best_square.empty()) {
+    // 1. 计算候选框的几何中心
+    cv::Point2f center(0, 0);
+    for (const auto& pt : best_square) {
+      center += cv::Point2f(pt.x, pt.y);
+    }
+    center *= 0.25f;
+
+    // 2. 提取中心附近的 10x10 小窗口 (注意防越界)
+    int rx = std::max(0, (int)(center.x - 5));
+    int ry = std::max(0, (int)(center.y - 5));
+    int rw = std::min(10, gray.cols - rx);
+    int rh = std::min(10, gray.rows - ry);
+    cv::Rect roi_rect(rx, ry, rw, rh);
+
+    // 3. 计算该区域的平均灰度值 (0-255)
+    cv::Scalar mean_val = cv::mean(gray(roi_rect));
+    float center_brightness = mean_val[0];
+
+    // 如果中心太暗（黑心），说明是 L-tag 兑换框，直接返回 false
+    if (center_brightness < 100.0f) {
+      // maix::log::info("Rejected by center darkness: %f", center_brightness);
+      return false;
+    }
+
     result.detected = true;
 
     for (const auto& pt : best_square) {
