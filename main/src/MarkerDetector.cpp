@@ -147,7 +147,7 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
         used[j] = true;
       }
     }
-    maix::log::info("Current cluster: l_count = %d", l_count);
+    // maix::log::info("Current cluster: l_count = %d", l_count);
     if (l_count >= 4 && group_points.size() >= 20) {
       cv::Rect bounding_box = cv::boundingRect(group_points);
       cv::RotatedRect rotated_rect = cv::minAreaRect(group_points);
@@ -159,7 +159,7 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
       if (aspect_ratio < 0.85f || aspect_ratio > 1.15f) {
         continue;  // 长宽比不符合要求，忽略
       }
-      maix::log::info("Aspect ratio: %f", aspect_ratio);
+      // maix::log::info("Aspect ratio: %f", aspect_ratio);
 
       // std::vector<cv::Point> hull;
       // cv::convexHull(group_points, hull);

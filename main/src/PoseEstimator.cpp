@@ -207,7 +207,7 @@ bool PoseEstimator::solve(const std::vector<cv::Point2f>& image_points,
     double err = std::pow(u_pred - image_points[3].x, 2) +
                  std::pow(v_pred - image_points[3].y, 2);
 
-    maix::log::info("Solution %d: reproj_err = %f", i, err);
+    // maix::log::info("Solution %d: reproj_err = %f", i, err);
     if (err < min_reproj_err) {
       min_reproj_err = err;
       best_idx = i;

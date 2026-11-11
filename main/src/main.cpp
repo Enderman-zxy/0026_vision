@@ -1,17 +1,19 @@
 #define MOCK_UART 1
 
-#include "main.h"
+// #include "main.h"
 
 #include <unistd.h>
 
 #include "ExitTagRecognizer.h"
+#include "MarkerDetector.h"
 #include "PoseEstimator.h"
-#include "VideoProcessor.h"
+// #include "VideoProcessor.h"
 #include "maix_basic.hpp"
 #include "maix_camera.hpp"
 #include "maix_display.hpp"
 #include "maix_image.hpp"
 #include "maix_image_cv.hpp"
+#include "maix_key.hpp"
 #include "maix_uart.hpp"
 #include "opencv2/freetype.hpp"
 #include "opencv2/opencv.hpp"
@@ -34,7 +36,6 @@ const std::vector<cv::Point3f> L_MARKER_3D_POINTS = {
     {HALF_SIZE, -HALF_SIZE, 0},
     {HALF_SIZE, HALF_SIZE, 0},
     {-HALF_SIZE, HALF_SIZE, 0}};
-
 
 // 相机参数
 cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << 249.7885517, 0., 162.208795,
@@ -159,81 +160,93 @@ bool process_exit_tag(cv::Mat& frame_hd, int16_t& out_x, int16_t& out_y,
 }
 
 int _main(int argc, char* argv[]) {
+  peripheral::key::Key key(nullptr, true);
+
   log::info("Vision System Started. Waiting for commands ...");
+  {
+    // 分辨率必须开到 640x480
+    camera::Camera cam(CAM_W, CAM_H);
 
-  // 分辨率必须开到 640x480
-  camera::Camera cam(CAM_W, CAM_H);
+    int frame_count = 0;
 
-  int frame_count = 0;
+    while (!app::need_exit()) {
+      auto [key_code, key_state] = key.read();
 
-  while (!app::need_exit()) {
-    uint8_t cmd = 0;
-    int read_ret = read_uart(&cmd);
+      if (key_code == maix::peripheral::key::KEY_OK &&
+          key_state == maix::peripheral::key::KEY_PRESSED) {
+        log::info("OK button pressed, exiting");
+        break;
+      }
+
+      uint8_t cmd = 0;
+      int read_ret = read_uart(&cmd);
 
 #if MOCK_UART
-    // 假串口模式下，我们用帧数模拟电控发指令
-    if (frame_count == 30) {
-      cmd = 0xFF;
-      read_ret = 1;
-    }  // 第30帧模拟发 0xFF
-    else if (frame_count == 200) {
-      cmd = 0xFD;
-      read_ret = 1;
-    }  // 第200帧模拟发 0xFD
+      // 假串口模式下，我们用帧数模拟电控发指令
+      if (frame_count == 30) {
+        cmd = 0xFF;
+        read_ret = 1;
+      }  // 第30帧模拟发 0xFF
+      else if (frame_count == 200) {
+        cmd = 0xFD;
+        read_ret = 1;
+      }  // 第200帧模拟发 0xFD
 
 #endif
-    if (read_ret > 0) {
-      if (cmd == 0xFF) {
-        send_single_byte(0xFE);
-        current_state = STATE_TRACK_BOX;
-        log::info("Received 0xFF: start tracking box.");
-      } else if (cmd == 0xFD) {
-        send_single_byte(0xFE);
-        current_state = STATE_TRACK_EXIT;
-        log::info("Received 0xFD: switch to exit tag.");
+      if (read_ret > 0) {
+        if (cmd == 0xFF) {
+          send_single_byte(0xFE);
+          current_state = STATE_TRACK_BOX;
+          log::info("Received 0xFF: start tracking box.");
+        } else if (cmd == 0xFD) {
+          send_single_byte(0xFE);
+          current_state = STATE_TRACK_EXIT;
+          log::info("Received 0xFD: switch to exit tag.");
+        }
       }
-    }
 
-    if (current_state == STATE_IDLE) {
-      usleep(10000);
+      if (current_state == STATE_IDLE) {
+        usleep(10000);
+        frame_count++;
+        continue;
+      }
+
+      image::Image* img = cam.read();
+      if (!img) continue;
+
+      cv::Mat frame_hd;
+      image::image2cv(*img, frame_hd);
+
+      int16_t send_x = 0, send_y = 0, send_d = 0;
+
+      bool detected = false;
+
+      if (current_state == STATE_TRACK_BOX) {
+        cv::Mat frame_small;
+        cv::resize(frame_hd, frame_small, cv::Size(ALGO_W, ALGO_H));
+        detected = process_l_marker(frame_small, send_x, send_y, send_d);
+      } else if (current_state == STATE_TRACK_EXIT) {
+        detected = process_exit_tag(frame_hd, send_x, send_y, send_d);
+      }
+
+      if (detected) {
+        log::info("[State %d] X:%d Y:%d D:%d", current_state, send_x, send_y,
+                  send_d);
+
+        send_data_packet(send_x, send_y, send_d);
+
+        if (current_state == STATE_TRACK_EXIT) {
+          send_single_byte(0xFC);
+          current_state = STATE_IDLE;
+          log::info("Exit Tag found. Send 0xFC, entering IDLE");
+        }
+      }
+      delete img;
       frame_count++;
-      continue;
+      usleep(30000);
     }
-
-    image::Image* img = cam.read();
-    if (!img) continue;
-
-    cv::Mat frame_hd;
-    image::image2cv(*img, frame_hd);
-
-    int16_t send_x = 0, send_y = 0, send_d = 0;
-
-    bool detected = false;
-
-    if (current_state == STATE_TRACK_BOX) {
-      cv::Mat frame_small;
-      cv::resize(frame_hd, frame_small, cv::Size(ALGO_W, ALGO_H));
-      detected = process_l_marker(frame_small, send_x, send_y, send_d);
-    } else if (current_state == STATE_TRACK_EXIT) {
-      detected = process_exit_tag(frame_hd, send_x, send_y, send_d);
-    }
-
-    if (detected) {
-      log::info("[State %d] X:%d Y:%d D:%d", current_state, send_x, send_y,
-                send_d);
-
-      send_data_packet(send_x, send_y, send_d);
-
-      if (current_state == STATE_TRACK_EXIT) {
-        send_single_byte(0xFC);
-        current_state = STATE_IDLE;
-        log::info("Exit Tag found. Send 0xFC, entering IDLE");
-      }
-    }
-    delete img;
-    frame_count++;
-    usleep(30000);
   }
+  usleep(2000000);
   return 0;
 }
 
