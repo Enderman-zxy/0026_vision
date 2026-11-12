@@ -29,6 +29,7 @@ class PoseEstimator {
  private:
   cv::Mat camera_matrix_;
   cv::Mat dist_coeffs_;
-  cv::Vec3d rvec_, tvec_;
+  cv::Vec3d rvec_ = cv::Vec3d(0,0,0);
+  cv::Vec3d tvec_;
   Eigen::Matrix3d R_eigen_;
 };

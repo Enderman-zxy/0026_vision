@@ -1,4 +1,7 @@
+// 串口通信开关， 1=关闭串口，使用终端输出，0=开启串口
 #define MOCK_UART 1
+
+#define ENABLE_DEBOUNCE 1
 
 // #include "main.h"
 
@@ -55,6 +58,16 @@ enum VisionMode {
 };
 VisionMode current_state = STATE_IDLE;
 
+#if ENABLE_DEBOUNCE
+const int MIN_DETECTED_FRAMES = 3;
+const int MAX_LOST_FRAMES = 5;
+
+int box_detected_frames = 0;
+int box_lost_frames = 0;
+int16_t last_valid_x = 0, last_valid_y = 0, last_valid_d = 0;
+bool box_is_stable = false;
+#endif
+
 #if MOCK_UART
 int uart_read_mock() { return 0; }
 void uart_write_mock(uint8_t* buf, int len) {
@@ -99,36 +112,47 @@ bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
                       int16_t& out_d) {
   auto results = l_marker_detector.detectMultiple(frame_small);
 
-  if (results.empty() || !results[0].detected_ ||
-      results[0].points_.size() != 4) {
-    return false;
+  // if (results.empty() || !results[0].detected_ ||
+  //     results[0].points_.size() != 4) {
+  //   return false;
+  // }
+
+  if (results.empty()) return false;
+
+  std::sort(results.begin(), results.end(),
+            [](const MarkerResult& a, const MarkerResult& b) {
+              return (a.bounding_box_.width * a.bounding_box_.height) >
+                     (b.bounding_box_.width * b.bounding_box_.height);
+            });
+
+  for (const auto& res : results) {
+    if (!res.detected_ || res.points_.size() != 4) continue;
+
+    auto& pts = res.points_;
+    float sum_u = 0, sum_v = 0;
+    for (const auto& pt : pts) {
+      sum_u += pt.x;
+      sum_v += pt.y;
+    }
+    float center_u = sum_u / 4.0f;
+    float center_v = sum_v / 4.0f;
+    out_x = (int16_t)((center_u - (162.21f)) * 2.0f);
+    out_y = (int16_t)((center_v - (115.92f)) * 2.0f);
+    if (l_marker_pose.solve(pts, L_MARKER_3D_POINTS)) {
+      cv::Vec3d tvec = l_marker_pose.getTvec();
+      out_d = (int16_t)(cv::norm(tvec) * 1000.0f);
+
+      // 画个坐标轴和中心点方便调试
+      // l_marker_pose.drawAxis(frame_small, 0.04f);
+      // cv::circle(frame_small, cv::Point(center_u, center_v), 4,
+      //            cv::Scalar(0, 0, 255), -1);
+
+      // 打印调试
+      // log::info("[L-Marker] X:%d Y:%d D:%d mm", err_x, err_y, distance_mm);
+      return true;
+    }
   }
 
-  auto& pts = results[0].points_;
-
-  float sum_u = 0, sum_v = 0;
-  for (const auto& pt : pts) {
-    sum_u += pt.x;
-    sum_v += pt.y;
-  }
-  float center_u = sum_u / 4.0f;
-  float center_v = sum_v / 4.0f;
-  out_x = (int16_t)((center_u - (ALGO_W / 2.0f)) * 2.0f);
-  out_y = (int16_t)((center_v - (ALGO_H / 2.0f)) * 2.0f);
-
-  if (l_marker_pose.solve(pts, L_MARKER_3D_POINTS)) {
-    cv::Vec3d tvec = l_marker_pose.getTvec();
-    out_d = (int16_t)(cv::norm(tvec) * 1000.0f);
-
-    // 画个坐标轴和中心点方便调试
-    l_marker_pose.drawAxis(frame_small, 0.04f);
-    cv::circle(frame_small, cv::Point(center_u, center_v), 4,
-               cv::Scalar(0, 0, 255), -1);
-
-    // 打印调试
-    // log::info("[L-Marker] X:%d Y:%d D:%d mm", err_x, err_y, distance_mm);
-    return true;
-  }
   return false;
 }
 
@@ -140,11 +164,11 @@ bool process_exit_tag(cv::Mat& frame_hd, int16_t& out_x, int16_t& out_y,
     return false;
   }
 
-  for (int i = 0; i < 4; i++) {
-    cv::line(frame_hd, result.corners[i], result.corners[(i + 1) % 4],
-             cv::Scalar(0, 255, 0), 2);
-  }
-  cv::circle(frame_hd, result.center, 4, cv::Scalar(0, 0, 255), -1);
+  // for (int i = 0; i < 4; i++) {
+  //   cv::line(frame_hd, result.corners[i], result.corners[(i + 1) % 4],
+  //            cv::Scalar(0, 255, 0), 2);
+  // }
+  // cv::circle(frame_hd, result.center, 4, cv::Scalar(0, 0, 255), -1);
   // cv::line(frame, cv::Point(IMG_WIDTH / 2, 0),
   //          cv::Point(IMG_WIDTH / 2, IMG_HEIGHT), cv::Scalar(200, 200, 200),
   //          1);
@@ -197,6 +221,11 @@ int _main(int argc, char* argv[]) {
         if (cmd == 0xFF) {
           send_single_byte(0xFE);
           current_state = STATE_TRACK_BOX;
+#if ENABLE_DEBOUNCE
+          box_detected_frames = 0;
+          box_lost_frames = 0;
+          box_is_stable = false;
+#endif
           log::info("Received 0xFF: start tracking box.");
         } else if (cmd == 0xFD) {
           send_single_byte(0xFE);
@@ -212,7 +241,11 @@ int _main(int argc, char* argv[]) {
       }
 
       image::Image* img = cam.read();
-      if (!img) continue;
+      if (!img) {
+        usleep(10000);
+        frame_count++;
+        continue;
+      }
 
       cv::Mat frame_hd;
       image::image2cv(*img, frame_hd);
@@ -225,6 +258,31 @@ int _main(int argc, char* argv[]) {
         cv::Mat frame_small;
         cv::resize(frame_hd, frame_small, cv::Size(ALGO_W, ALGO_H));
         detected = process_l_marker(frame_small, send_x, send_y, send_d);
+#if ENABLE_DEBOUNCE
+        if (detected) {
+          box_detected_frames++;
+          box_lost_frames = 0;
+
+          last_valid_x = send_x;
+          last_valid_y = send_y;
+          last_valid_d = send_d;
+
+          if (box_detected_frames >= MIN_DETECTED_FRAMES) {
+            box_is_stable = true;
+          }
+        } else {
+          box_detected_frames = 0;
+          box_lost_frames++;
+
+          if (box_lost_frames > MAX_LOST_FRAMES) {
+            box_is_stable = false;
+          }
+        }
+        detected = box_is_stable;
+        send_x = last_valid_x;
+        send_y = last_valid_y;
+        send_d = last_valid_d;
+#endif
       } else if (current_state == STATE_TRACK_EXIT) {
         detected = process_exit_tag(frame_hd, send_x, send_y, send_d);
       }
@@ -260,25 +318,3 @@ int main(int argc, char* argv[]) {
   // released(call objects' destructor) before exit.
   CATCH_EXCEPTION_RUN_RETURN(_main, -1, argc, argv);
 }
-
-/*
-    0xFF
-
-x 2 Byte
-y 2 Byte
-d 2 Byte
-...
-    0xFE
-
-6n + 2 Byte
-*/
-
-/*
-0x01 识别 兑换标志
-0x02 识别 退出兑换标志
-0x03 退出
-*/
-
-/*
-
-*/

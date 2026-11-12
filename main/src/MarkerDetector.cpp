@@ -111,7 +111,7 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
   std::vector<std::vector<cv::Point>> l_contours;
   std::vector<cv::Point2f> l_centers;
 
-  double min_l_area = 10.0;  // 最小面积阈值，根据实际情况调整
+  double min_l_area = 40.0;  // 最小面积阈值，根据实际情况调整
 
   for (const auto& contour : contours) {
     double area = cv::contourArea(contour);
@@ -126,14 +126,14 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
 
   std::vector<bool> used(l_contours.size(), false);
 
-  double cluster_distance_threshold = 200.0;  // 聚类距离阈值，根据实际情况调整
+  double cluster_distance_threshold = 60;  // 聚类距离阈值，根据实际情况调整
   for (size_t i = 0; i < l_contours.size(); ++i) {
     if (used[i]) continue;
 
     std::vector<cv::Point2f> group_points;
     group_points.insert(group_points.end(), l_contours[i].begin(),
                         l_contours[i].end());
-    used[i] = true;
+    
 
     int l_count = 1;
     for (size_t j = i + 1; j < l_contours.size(); ++j) {
@@ -168,7 +168,7 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
       // * 1.5f) {
       //   continue;  // 凸包面积与最小外接矩形面积差异过大，忽略
       // }
-
+      used[i] = true;
       cv::Point2f rect_points[4];
       rotated_rect.points(rect_points);
       MarkerResult result;

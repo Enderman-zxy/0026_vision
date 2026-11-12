@@ -90,15 +90,35 @@ bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
     cv::approxPolyDP(contour, poly, cv::arcLength(contour, true) * 0.05, true);
 
     if (poly.size() == 4) {
-      cv::Rect rect = cv::boundingRect(poly);
-      float aspect_ratio = (float)rect.width / rect.height;
-      // 长宽比过滤
-      if (aspect_ratio < 0.8f || aspect_ratio > 1.25f) {
+      // cv::Rect rect = cv::boundingRect(poly);
+      // float aspect_ratio = (float)rect.width / rect.height;
+      // // 长宽比过滤
+      cv::RotatedRect rot_rect = cv::minAreaRect(poly);
+      float w = rot_rect.size.width;
+      float h = rot_rect.size.height;
+
+      if (h == 0) {
+        continue;
+      }
+
+      float aspect_ratio = w / h;
+
+      if (aspect_ratio < 0.7f || aspect_ratio > 1.4f) {
         continue;
       }
       if (area > max_area) {
-        max_area = area;
-        best_square = poly;
+        cv::Point2f center = rot_rect.center;
+        int rx = std::max(0, (int)(center.x - 5));
+        int ry = std::max(0, (int)(center.y - 5));
+        int rw = std::min(10, gray.cols - rx);
+        int rh = std::min(10, gray.rows - ry);
+
+        cv::Rect roi_rect(rx, ry, rw, rh);
+
+        if (cv::mean(gray(roi_rect))[0] > 100.0f) {
+          max_area = area;
+          best_square = poly;
+        }
       }
     }
   }

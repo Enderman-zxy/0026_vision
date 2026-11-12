@@ -7,11 +7,11 @@
 struct ExitTagResult {
   bool detected = false;
   int id = -1;
-  int16_t err_x;
-  int16_t err_y;
+  int16_t err_x = 0;
+  int16_t err_y = 0;
   int16_t width_px = 0;
   std::vector<cv::Point2f> corners;
-  cv::Point2f center;
+  cv::Point2f center{0,0};
 };
 class ExitTagRecognizer {
  public:
