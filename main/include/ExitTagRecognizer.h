@@ -11,7 +11,7 @@ struct ExitTagResult {
   int16_t err_y = 0;
   int16_t width_px = 0;
   std::vector<cv::Point2f> corners;
-  cv::Point2f center{0,0};
+  cv::Point2f center{0.f,0.f};
 };
 class ExitTagRecognizer {
  public:

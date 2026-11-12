@@ -119,16 +119,25 @@ bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
 
   if (results.empty()) return false;
 
-  std::sort(results.begin(), results.end(),
-            [](const MarkerResult& a, const MarkerResult& b) {
-              return (a.bounding_box_.width * a.bounding_box_.height) >
-                     (b.bounding_box_.width * b.bounding_box_.height);
-            });
+  std::vector<size_t> order;
+  order.reserve(results.size());
 
-  for (const auto& res : results) {
-    if (!res.detected_ || res.points_.size() != 4) continue;
+  for (size_t i = 0; i < results.size(); i++) {
+    if (results[i].detected_ && results[i].points_.size() == 4) {
+      order.push_back(i);
+    }
+  }
+  if (order.empty()) return false;
+  std::sort(order.begin(), order.end(), [&results](size_t a, size_t b) {
+    return results[a].bounding_box_.area() > results[b].bounding_box_.area();
+  });
 
-    auto& pts = res.points_;
+  const double cx = camera_matrix.at<double>(0, 2);
+  const double cy = camera_matrix.at<double>(1, 2);
+
+  for (size_t idx : order) {
+    auto& pts = results[idx].points_;
+
     float sum_u = 0, sum_v = 0;
     for (const auto& pt : pts) {
       sum_u += pt.x;
@@ -136,21 +145,22 @@ bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
     }
     float center_u = sum_u / 4.0f;
     float center_v = sum_v / 4.0f;
-    out_x = (int16_t)((center_u - (162.21f)) * 2.0f);
-    out_y = (int16_t)((center_v - (115.92f)) * 2.0f);
-    if (l_marker_pose.solve(pts, L_MARKER_3D_POINTS)) {
-      cv::Vec3d tvec = l_marker_pose.getTvec();
-      out_d = (int16_t)(cv::norm(tvec) * 1000.0f);
-
-      // 画个坐标轴和中心点方便调试
-      // l_marker_pose.drawAxis(frame_small, 0.04f);
-      // cv::circle(frame_small, cv::Point(center_u, center_v), 4,
-      //            cv::Scalar(0, 0, 255), -1);
-
-      // 打印调试
-      // log::info("[L-Marker] X:%d Y:%d D:%d mm", err_x, err_y, distance_mm);
-      return true;
+    out_x = (int16_t)((center_u - cx) * 2.0f);
+    out_y = (int16_t)((center_v - cy) * 2.0f);
+    if (!(l_marker_pose.solve(pts, L_MARKER_3D_POINTS))) {
+      continue;
     }
+    cv::Vec3d tvec = l_marker_pose.getTvec();
+    out_d = (int16_t)(cv::norm(tvec) * 1000.0f);
+
+    // 画个坐标轴和中心点方便调试
+    // l_marker_pose.drawAxis(frame_small, 0.04f);
+    // cv::circle(frame_small, cv::Point(center_u, center_v), 4,
+    //            cv::Scalar(0, 0, 255), -1);
+
+    // 打印调试
+    // log::info("[L-Marker] X:%d Y:%d D:%d mm", err_x, err_y, distance_mm);
+    return true;
   }
 
   return false;

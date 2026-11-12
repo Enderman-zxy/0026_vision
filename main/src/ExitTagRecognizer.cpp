@@ -66,6 +66,12 @@ ExitTagRecognizer::ExitTagRecognizer() {}
 bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
                                ExitTagResult& result) {
   result.detected = false;
+  result.id = -1;
+  result.corners.clear();
+  result.err_x = 0;
+  result.err_y = 0;
+  result.width_px = 0;
+  result.center = cv::Point2f(0, 0);
   if (frame.empty()) return false;
 
   // 不需要 image2cv 了，直接用 frame
@@ -79,54 +85,136 @@ bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
   cv::findContours(binary, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_SIMPLE);
 
-  double max_area = 0;
-  std::vector<cv::Point> best_square;
+  // double max_area = 0;
+  // std::vector<cv::Point> best_square;
+
+  // for (const auto& contour : contours) {
+  //   double area = cv::contourArea(contour);
+  //   if (area < 1000) continue;  // 忽略噪点
+
+  //   std::vector<cv::Point> poly;
+  //   cv::approxPolyDP(contour, poly, cv::arcLength(contour, true) * 0.05,
+  //   true);
+
+  //   if (poly.size() == 4) {
+  //     // cv::Rect rect = cv::boundingRect(poly);
+  //     // float aspect_ratio = (float)rect.width / rect.height;
+  //     // // 长宽比过滤
+  //     cv::RotatedRect rot_rect = cv::minAreaRect(poly);
+  //     float w = rot_rect.size.width;
+  //     float h = rot_rect.size.height;
+
+  //     if (h == 0) {
+  //       continue;
+  //     }
+
+  //     float aspect_ratio = w / h;
+
+  //     if (aspect_ratio < 0.7f || aspect_ratio > 1.4f) {
+  //       continue;
+  //     }
+  //     if (area > max_area) {
+  //       cv::Point2f center = rot_rect.center;
+  //       int rx = std::max(0, (int)(center.x - 5));
+  //       int ry = std::max(0, (int)(center.y - 5));
+  //       int rw = std::min(10, gray.cols - rx);
+  //       int rh = std::min(10, gray.rows - ry);
+
+  //       cv::Rect roi_rect(rx, ry, rw, rh);
+
+  //       if (cv::mean(gray(roi_rect))[0] > 100.0f) {
+  //         max_area = area;
+  //         best_square = poly;
+  //       }
+  //     }
+  //   }
+  // }
+
+  // if (!best_square.empty()) {
+  //   // 1. 计算候选框的几何中心
+  //   cv::Point2f center(0, 0);
+  //   for (const auto& pt : best_square) {
+  //     center += cv::Point2f(pt.x, pt.y);
+  //   }
+  //   center *= 0.25f;
+
+  //   // 2. 提取中心附近的 10x10 小窗口 (注意防越界)
+  //   int rx = std::max(0, (int)(center.x - 5));
+  //   int ry = std::max(0, (int)(center.y - 5));
+  //   int rw = std::min(10, gray.cols - rx);
+  //   int rh = std::min(10, gray.rows - ry);
+  //   cv::Rect roi_rect(rx, ry, rw, rh);
+
+  //   // 3. 计算该区域的平均灰度值 (0-255)
+  //   cv::Scalar mean_val = cv::mean(gray(roi_rect));
+  //   float center_brightness = mean_val[0];
+
+  //   // 如果中心太暗（黑心），说明是 L-tag 兑换框，直接返回 false
+  //   if (center_brightness < 100.0f) {
+  //     // maix::log::info("Rejected by center darkness: %f",
+  //     center_brightness); return false;
+  //   }
+
+  //   result.detected = true;
+
+  //   for (const auto& pt : best_square) {
+  //     result.corners.push_back(cv::Point2f(pt.x, pt.y));
+  //   }
+
+  //   result.center = cv::Point2f(0, 0);
+  //   for (const auto& pt : result.corners) {
+  //     result.center += pt;
+  //   }
+  //   result.center *= 0.25f;
+
+  //   result.err_x = static_cast<int16_t>(result.center.x - (img_w / 2.0f));
+  //   result.err_y = static_cast<int16_t>(result.center.y - (img_h / 2.0f));
+  //   result.width_px =
+  //       static_cast<int16_t>(cv::norm(result.corners[1] -
+  //       result.corners[0]));
+  // }
+
+  // return result.detected;
+  struct SquareCandidate {
+    double area;
+    double mean_edge;
+    std::vector<cv::Point> poly;
+  };
+
+  std::vector<SquareCandidate> candidates;
 
   for (const auto& contour : contours) {
     double area = cv::contourArea(contour);
-    if (area < 1000) continue;  // 忽略噪点
+    if (area < 1000) continue;
 
     std::vector<cv::Point> poly;
     cv::approxPolyDP(contour, poly, cv::arcLength(contour, true) * 0.05, true);
 
     if (poly.size() == 4) {
-      // cv::Rect rect = cv::boundingRect(poly);
-      // float aspect_ratio = (float)rect.width / rect.height;
-      // // 长宽比过滤
-      cv::RotatedRect rot_rect = cv::minAreaRect(poly);
-      float w = rot_rect.size.width;
-      float h = rot_rect.size.height;
-
-      if (h == 0) {
+      double e0 = cv::norm(poly[0] - poly[1]);
+      double e1 = cv::norm(poly[1] - poly[2]);
+      double e2 = cv::norm(poly[2] - poly[3]);
+      double e3 = cv::norm(poly[3] - poly[0]);
+      double w_mean = (e0 + e2) * 0.5;
+      double h_mean = (e1 + e3) * 0.5;
+      float aspect_ratio =
+          (h_mean > 1e-6) ? static_cast<float>(w_mean / h_mean) : 0.0f;
+      if (aspect_ratio < 0.8f || aspect_ratio > 1.25f) {
         continue;
       }
 
-      float aspect_ratio = w / h;
-
-      if (aspect_ratio < 0.7f || aspect_ratio > 1.4f) {
-        continue;
-      }
-      if (area > max_area) {
-        cv::Point2f center = rot_rect.center;
-        int rx = std::max(0, (int)(center.x - 5));
-        int ry = std::max(0, (int)(center.y - 5));
-        int rw = std::min(10, gray.cols - rx);
-        int rh = std::min(10, gray.rows - ry);
-
-        cv::Rect roi_rect(rx, ry, rw, rh);
-
-        if (cv::mean(gray(roi_rect))[0] > 100.0f) {
-          max_area = area;
-          best_square = poly;
-        }
-      }
+      candidates.push_back({area, (e0 + e1 + e2 + e3) * 0.25, poly});
     }
   }
 
-  if (!best_square.empty()) {
+  std::sort(candidates.begin(), candidates.end(),
+            [](const SquareCandidate& a, const SquareCandidate& b) {
+              return a.area > b.area;
+            });
+  for (const auto& cand : candidates) {
     // 1. 计算候选框的几何中心
     cv::Point2f center(0, 0);
-    for (const auto& pt : best_square) {
+    for (const auto& pt : cand.poly) {
       center += cv::Point2f(pt.x, pt.y);
     }
     center *= 0.25f;
@@ -142,15 +230,11 @@ bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
     cv::Scalar mean_val = cv::mean(gray(roi_rect));
     float center_brightness = mean_val[0];
 
-    // 如果中心太暗（黑心），说明是 L-tag 兑换框，直接返回 false
     if (center_brightness < 100.0f) {
-      // maix::log::info("Rejected by center darkness: %f", center_brightness);
-      return false;
+      continue;
     }
-
     result.detected = true;
-
-    for (const auto& pt : best_square) {
+    for (const auto& pt : cand.poly) {
       result.corners.push_back(cv::Point2f(pt.x, pt.y));
     }
 
@@ -162,9 +246,9 @@ bool ExitTagRecognizer::detect(cv::Mat& frame, int img_w, int img_h,
 
     result.err_x = static_cast<int16_t>(result.center.x - (img_w / 2.0f));
     result.err_y = static_cast<int16_t>(result.center.y - (img_h / 2.0f));
-    result.width_px =
-        static_cast<int16_t>(cv::norm(result.corners[1] - result.corners[0]));
+    result.width_px = static_cast<int16_t>(cand.mean_edge);
+    return true;
   }
 
-  return result.detected;
+  return false;
 }

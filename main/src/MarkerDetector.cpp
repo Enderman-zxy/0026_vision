@@ -111,7 +111,9 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
   std::vector<std::vector<cv::Point>> l_contours;
   std::vector<cv::Point2f> l_centers;
 
-  double min_l_area = 40.0;  // 最小面积阈值，根据实际情况调整
+  std::vector<int> l_sizes;
+
+  double min_l_area = 30.0;  // 最小面积阈值，根据实际情况调整
 
   for (const auto& contour : contours) {
     double area = cv::contourArea(contour);
@@ -122,62 +124,67 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
 
     l_contours.push_back(contour);
     l_centers.push_back(getContourCenter(contour));
+    cv::Rect contour_bbox = cv::boundingRect(contour);
+    l_sizes.push_back(std::max(contour_bbox.width, contour_bbox.height));
   }
 
   std::vector<bool> used(l_contours.size(), false);
 
-  double cluster_distance_threshold = 60;  // 聚类距离阈值，根据实际情况调整
+  double base_threshold = 0.25 * std::min(frame.cols, frame.rows);
   for (size_t i = 0; i < l_contours.size(); ++i) {
     if (used[i]) continue;
 
-    std::vector<cv::Point2f> group_points;
-    group_points.insert(group_points.end(), l_contours[i].begin(),
-                        l_contours[i].end());
-    
+    std::vector<size_t> group_indices;
+    group_indices.push_back(i);
+    std::vector<cv::Point2f> group_points(l_contours[i].begin(),
+                                          l_contours[i].end());
 
-    int l_count = 1;
-    for (size_t j = i + 1; j < l_contours.size(); ++j) {
-      if (used[j]) continue;
-
+    for (size_t j = 0; j < l_contours.size(); ++j) {
+      if (i == j || used[j]) continue;
+      double cluster_distance_threshold =
+          std::max(base_threshold, 3.5 * std::max(l_sizes[i], l_sizes[j]));
       double distance = cv::norm(l_centers[i] - l_centers[j]);
       if (distance < cluster_distance_threshold) {
+        group_indices.push_back(j);
         group_points.insert(group_points.end(), l_contours[j].begin(),
                             l_contours[j].end());
-        l_count++;
-        used[j] = true;
       }
     }
     // maix::log::info("Current cluster: l_count = %d", l_count);
-    if (l_count >= 4 && group_points.size() >= 20) {
-      cv::Rect bounding_box = cv::boundingRect(group_points);
-      cv::RotatedRect rotated_rect = cv::minAreaRect(group_points);
-      if (rotated_rect.size.width < 10 || rotated_rect.size.height < 10) {
-        continue;  // 忽略过小的标记
-      }
-
-      float aspect_ratio = rotated_rect.size.width / rotated_rect.size.height;
-      if (aspect_ratio < 0.85f || aspect_ratio > 1.15f) {
-        continue;  // 长宽比不符合要求，忽略
-      }
-      // maix::log::info("Aspect ratio: %f", aspect_ratio);
-
-      // std::vector<cv::Point> hull;
-      // cv::convexHull(group_points, hull);
-      // float hull_area = cv::contourArea(hull);
-      // if (rotated_rect.size.width * rotated_rect.size.height > hull_area
-      // * 1.5f) {
-      //   continue;  // 凸包面积与最小外接矩形面积差异过大，忽略
-      // }
-      used[i] = true;
-      cv::Point2f rect_points[4];
-      rotated_rect.points(rect_points);
-      MarkerResult result;
-      result.detected_ = true;
-      result.bounding_box_ = bounding_box;
-      std::vector<cv::Point2f> pts(rect_points, rect_points + 4);
-      result.points_ = sortPoints(pts);
-      results.push_back(result);
+    if (group_indices.size() < 4 || group_points.size() < 20) {
+      continue;
     }
+
+    cv::Rect bounding_box = cv::boundingRect(group_points);
+    cv::RotatedRect rotated_rect = cv::minAreaRect(group_points);
+    if (rotated_rect.size.width < 10 || rotated_rect.size.height < 10) {
+      continue;  // 忽略过小的标记
+    }
+
+    float aspect_ratio = rotated_rect.size.width / rotated_rect.size.height;
+    if (aspect_ratio < 0.85f || aspect_ratio > 1.15f) {
+      continue;  // 长宽比不符合要求，忽略
+    }
+    // maix::log::info("Aspect ratio: %f", aspect_ratio);
+
+    // std::vector<cv::Point> hull;
+    // cv::convexHull(group_points, hull);
+    // float hull_area = cv::contourArea(hull);
+    // if (rotated_rect.size.width * rotated_rect.size.height > hull_area
+    // * 1.5f) {
+    //   continue;  // 凸包面积与最小外接矩形面积差异过大，忽略
+    // }
+    for (size_t idx : group_indices) {
+      used[idx] = true;
+    }
+    cv::Point2f rect_points[4];
+    rotated_rect.points(rect_points);
+    MarkerResult result;
+    result.detected_ = true;
+    result.bounding_box_ = bounding_box;
+    std::vector<cv::Point2f> pts(rect_points, rect_points + 4);
+    result.points_ = sortPoints(pts);
+    results.push_back(result);
   }
 
   return results;
