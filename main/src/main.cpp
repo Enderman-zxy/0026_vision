@@ -1,6 +1,6 @@
 // 串口通信开关， 1=关闭串口，使用终端输出，0=开启串口
 #define MOCK_UART 1
-
+// 防抖开关，1=打开防抖，0=关闭防抖
 #define ENABLE_DEBOUNCE 1
 
 // #include "main.h"
