@@ -329,7 +329,7 @@ std::vector<MarkerResult> MarkerDetector::detectMultiple(const cv::Mat& frame) {
   }
 
   std::vector<std::vector<cv::Point>> contours;
-  cv::findContours(preprocess(frame), contours, cv::RETR_EXTERNAL,
+  cv::findContours(binary, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_SIMPLE);
 
   // [H1] 面积门槛改成"随画面大小浮动"的同时保留一个很低的绝对地板：
