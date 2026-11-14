@@ -3,7 +3,9 @@
 // 防抖开关，1=打开防抖，0=关闭防抖
 #define ENABLE_DEBOUNCE 1
 // 单位开关，1=x坐标单位为毫米，0=x坐标单位为像素
-#define mm_or_px 0
+#define MM_OR_PX 0
+// 调试开关，1=打印详细日志，0=只打印warn和error
+#define DEBUG_VERBOSE 1
 
 // #include "main.h"
 
@@ -213,7 +215,7 @@ bool process_l_marker(cv::Mat& frame_small, int16_t& out_x, int16_t& out_y,
       continue;
     }
     last_height_residual_mm = height_residual_mm;
-#if mm_or_px
+#if MM_OR_PX
     const int16_t x_mm = clamp_i16(right_mm);
     out_x = x_mm;
 #else
@@ -266,6 +268,9 @@ bool process_exit_tag(cv::Mat& frame_hd, int16_t& out_x, int16_t& out_y,
 }
 
 int _main(int argc, char* argv[]) {
+#if !DEBUG_VERBOSE
+  maix::log::set_log_level(log::level::LEVEL_WARN);
+#endif
   peripheral::key::Key key(nullptr, true);
 
 #if MOCK_UART
