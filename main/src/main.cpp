@@ -69,8 +69,8 @@ const float kQuadEdgeGrowPx = 0.0f;
 //                 若对着地面某点，量出"该点离地高度差 / 水平距离"取 atan。
 //   cam_height_m  卷尺量镜头中心到地面。
 //   cam_forward_m
-//   卷尺量镜头中心到车体旋转中心（麦克纳姆轮几何中心）的前向距离，
-//                 镜头在旋转中心前方为正。
+//   卷尺量镜头中心到车体旋转中心（麦克纳姆轮几何中心）的前向距离，镜头在旋转中心前方为正。
+
 CameraExtrinsics kCameraExtrinsics = {
     0.0,    // pitch_deg      光轴下俯角（度），正 = 向下看
     0.20,   // cam_height_m   相机光心离地高度（米）—— 必须实测
