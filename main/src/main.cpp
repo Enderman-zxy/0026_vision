@@ -1,11 +1,11 @@
 // 串口通信开关， 1=关闭串口，使用终端输出，0=开启串口
-#define MOCK_UART 1
+#define MOCK_UART 0
 // 防抖开关，1=打开防抖，0=关闭防抖
 #define ENABLE_DEBOUNCE 1
 // 单位开关，1=x坐标单位为毫米，0=x坐标单位为像素
 #define MM_OR_PX 0
 // 调试开关，1=打印详细日志，0=只打印warn和error
-#define DEBUG_VERBOSE 1
+// #define DEBUG_VERBOSE 0
 
 // #include "main.h"
 
@@ -17,10 +17,14 @@
 // #include "VideoProcessor.h"
 #include "maix_basic.hpp"
 #include "maix_camera.hpp"
-#include "maix_display.hpp"
+#include "maix_err.hpp"
+// #include "maix_display.hpp"
 #include "maix_image.hpp"
 #include "maix_image_cv.hpp"
 #include "maix_key.hpp"
+#include "maix_log.hpp"
+#include "maix_pinmap.hpp"
+#include "maix_time.hpp"
 #include "maix_uart.hpp"
 #include "opencv2/freetype.hpp"
 #include "opencv2/opencv.hpp"
@@ -125,8 +129,23 @@ void uart_write_mock(uint8_t* buf, int len) {
   log::info("[MOCK TX] %s", hex_str);
 }
 #else
-maix::peripheral::uart::UART uart("/dev/ttyS0", 115200);
+peripheral::uart::UART uart;
 #endif
+
+static bool init_uart_pins() {
+  // err::Err e = peripheral::pinmap::set_pin_function("A19", "UART1_TX");
+  // if (e != err::Err::ERR_NONE) return false;
+  // e = peripheral::pinmap::set_pin_function("A18", "UART1_RX");
+  // if (e != err::Err::ERR_NONE) return false;
+
+  uart.set_port("/dev/ttyS0");
+  uart.set_baudrate(115200);  // 8N1 是默认值，不用显式设
+  // if (uart.open() != err::Err::ERR_NONE) {
+  //   log::error("open ttyS1 failed\r\n");
+  //   return false;
+  // }
+  return true;
+}
 
 void send_single_byte(uint8_t cmd) {
 #if MOCK_UART
@@ -268,11 +287,12 @@ bool process_exit_tag(cv::Mat& frame_hd, int16_t& out_x, int16_t& out_y,
 }
 
 int _main(int argc, char* argv[]) {
-#if !DEBUG_VERBOSE
-  maix::log::set_log_level(log::level::LEVEL_WARN);
-#endif
+  // #if !DEBUG_VERBOSE
+  //   maix::log::set_log_level(log::LogLevel::LEVEL_WARN, true);
+  // #endif
+  if (!init_uart_pins()) return -1;
   peripheral::key::Key key(nullptr, true);
-
+  send_single_byte(0xFE);
 #if MOCK_UART
   log::warn(
       "!!! MOCK_UART=1: 串口是假的，所有 0xFE/0xFC/6 字节包只会打到日志 !!!");

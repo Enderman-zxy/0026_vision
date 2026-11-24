@@ -2,7 +2,7 @@ id: my_app                         # 唯一 ID，使用小写字母并用下划�
 name: My APP
 name[zh]: 我的应用                  # 中文名称
 version: 1.0.0                     # 版本号，格式为 major.minor.patch
-icon: assets/my_app.png            # 图标文件，可以是 png 或 lottie json 文件，或为空
+icon:          # 图标文件，可以是 png 或 lottie json 文件，或为空
 author: Sipeed Ltd
 desc: My APP description
 desc[zh]: 视觉识别
