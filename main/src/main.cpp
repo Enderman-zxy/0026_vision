@@ -133,17 +133,17 @@ peripheral::uart::UART uart;
 #endif
 
 static bool init_uart_pins() {
-  // err::Err e = peripheral::pinmap::set_pin_function("A19", "UART1_TX");
-  // if (e != err::Err::ERR_NONE) return false;
-  // e = peripheral::pinmap::set_pin_function("A18", "UART1_RX");
-  // if (e != err::Err::ERR_NONE) return false;
+  err::Err e = peripheral::pinmap::set_pin_function("A19", "UART1_TX");
+  if (e != err::Err::ERR_NONE) return false;
+  e = peripheral::pinmap::set_pin_function("A18", "UART1_RX");
+  if (e != err::Err::ERR_NONE) return false;
 
-  uart.set_port("/dev/ttyS0");
+  uart.set_port("/dev/ttyS1");
   uart.set_baudrate(115200);  // 8N1 是默认值，不用显式设
-  // if (uart.open() != err::Err::ERR_NONE) {
-  //   log::error("open ttyS1 failed\r\n");
-  //   return false;
-  // }
+  if (uart.open() != err::Err::ERR_NONE) {
+    log::error("open ttyS1 failed\r\n");
+    return false;
+  }
   return true;
 }
 
@@ -292,7 +292,20 @@ int _main(int argc, char* argv[]) {
   // #endif
   if (!init_uart_pins()) return -1;
   peripheral::key::Key key(nullptr, true);
-  send_single_byte(0xFE);
+  // send_single_byte(0xFE);
+  while (!app::need_exit()) {
+    // send_single_byte(0xAA);
+    send_data_packet(0XAAAA,0XAAAA,0XAAAA);
+    usleep(100000);
+    int key_code = 0, key_state = 0;
+    if (key.read(key_code, key_state) == err::Err::ERR_NONE) {
+      if (key_code == maix::peripheral::key::KEY_OK &&
+          key_state == maix::peripheral::key::KEY_PRESSED) {
+        log::info("OK button pressed, exiting");
+        break;
+      }
+    }
+  }
 #if MOCK_UART
   log::warn(
       "!!! MOCK_UART=1: 串口是假的，所有 0xFE/0xFC/6 字节包只会打到日志 !!!");
